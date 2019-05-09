@@ -1,7 +1,7 @@
 # using Languages
-using TextModel
 using Test
 using SimilaritySearch
+using TextSearch
 
 const text0 = "@user;) #jello.world"
 const text1 = "hello world!! @user;) #jello.world :)"
@@ -69,7 +69,6 @@ const sentiment_text = "lol, esto me encanta"
     dmap = id2token(dmodel)
     @show sentiment_text
     @show dmodel
-    #TextModel.hist(dmodel)
     a = [(dmap[t.id], t.weight) for t in vectorize(dmodel, sentiment_text).tokens]
     b = [(:me1,1.0),(:me2,0.0),(:encanta1,1.0),(:encanta2,0.0),(:esto1,0.4),(:esto2,0.6),(:lol1,1.0),(:lol2,0.0)]
     @test string(a) == string(b)
@@ -85,7 +84,6 @@ end
     dmap = id2token(dmodel)
     @show sentiment_text
     @show dmodel
-    #TextModel.hist(dmodel)
     d1 = [(dmap[t.id], t.weight) for t in vectorize(dmodel, sentiment_text).tokens]
     d2 = [(:me1, 1.0), (:me2, 0.0), (:encanta1, 1.0), (:encanta2, 0.0), (:esto1, 0.4), (:esto2, 0.6), (:lol1, 1.0), (:lol2, 0.0)]
     @test string(d1) == string(d2)
@@ -168,7 +166,7 @@ _corpus = [
     model = fit(VectorModel, config, _corpus)
     @show _corpus
     tokenmap = id2token(model)
-    X = [vectorize(model, FreqModel, x) for x in _corpus]
+    X = [vectorize(model, FreqModel, x) |> normalize! for x in _corpus]
     dX = transpose(X)
     for (keyid, tokens) in dX
         @show "word $keyid - $(tokenmap[keyid]): ", [(a.id, a.weight) for a in tokens]
@@ -184,10 +182,10 @@ end
     model = fit(VectorModel, config, _corpus)
     invindex = InvIndex()
     for c in _corpus
-        push!(invindex, invindex.n + 1, weighted_bow(model, TfidfModel, c, norm=true))
+        push!(invindex, invindex.n + 1, weighted_bow(model, TfidfModel, c) |> normalize!)
     end
 
-    q = weighted_bow(model, TfidfModel, "la casa roja", norm=true)
+    q = weighted_bow(model, TfidfModel, "la casa roja") |> normalize!
     res = search(invindex, q, KnnResult(4))
     ires = [r.objID for r in res]
     @show res, _corpus[ires]

@@ -1,5 +1,6 @@
-import SimilaritySearch: fit
-export TextModel, VectorModel, fit, inverse_vbow, vectorize, weighted_bow, id2token, TfidfModel, TfModel, IdfModel, FreqModel
+import SimilaritySearch:
+    fit
+export VectorModel, fit, inverse_vbow, vectorize, weighted_bow, id2token, TfidfModel, TfModel, IdfModel, FreqModel
 
 """
     abstract type Model
@@ -8,7 +9,11 @@ An abstract type that represents a weighting model
 """
 abstract type Model end
 
+"""
+    mutable struct VectorModel
 
+Models a text through a vector space
+"""
 mutable struct VectorModel <: Model
     config::TextConfig
     vocab::Dict{Symbol,TokenData}
@@ -59,35 +64,6 @@ function inverse_vbow(vec, vocmap)
     [(vocmap[token.id], token.weight) for token in s]
 end
 
-
-### """
-###     maximum_(vocab::Dict{Symbol,TokenData})
-### 
-### Returns the highest frequency in the given vocabulary
-### """
-### function xmaximum_(vocab::Dict{Symbol,TokenData})
-###     m = 0
-###     for p in vocab
-###         m = max(m, p.second.freq)
-###     end
-###     
-###     m
-### end
-### 
-### """
-###     maximum_(vocab::Dict{Symbol,Int})
-### 
-### Returns the highest value
-### """
-### function xmaximum_(vocab::Dict{Symbol,Int})
-###     m = 0
-###     for p in vocab
-###         m = max(m, p.second)
-###     end
-###     
-###     m
-### end
-
 """
     filter_vocab(vocab, maxfreq, lower::int, higher::Float64=1.0)
 
@@ -110,14 +86,21 @@ function filter_vocab(vocab, maxfreq, lower::Int, higher::Float64=1.0)
     X, floor(Int, maxfreq * higher)
 end
 
-function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0) where {T <: Union{TfidfModel,TfModel,IdfModel,FreqModel}}
+"""
+    fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0)
+
+Trains a vector model using the text preprocessing configuration `config` and the input corpus. It also allows for filtering
+tokens with low and high number of occurrences. `lower` is specified as an integer and `higher` as a proportion between
+the frequency of the current token and the maximum frequency of the model.
+"""
+function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lower=0, higher=1.0)
     voc = Dict{Symbol,TokenData}()
-    n = 1
+    n = 0
     maxfreq = 0
 
     for data in corpus
-        _, maxfreq = compute_vocabulary(config, data, voc)
         n += 1
+        _, maxfreq = compute_vocabulary(config, data, voc)
         if n % 10000 == 1
             @info "advance VectorModel: $n processed items"
         end
@@ -131,10 +114,11 @@ function fit(::Type{VectorModel}, config::TextConfig, corpus::AbstractVector; lo
     VectorModel(config, voc, maxfreq, n)
 end
 
-function vectorize(model::VectorModel, weighting::Type, data)::SparseVector
+function vectorize(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::SparseVector
     bag, maxfreq = compute_bow(model.config, data)
     b = Vector{SparseVectorEntry}(undef, length(bag))
     i = 0
+    bag = modify_bow!(bag)
     for (token, freq) in bag
         global_tokendata = get(model.vocab, token, UNKNOWN_TOKEN)
         if global_tokendata.freq == 0
@@ -150,10 +134,17 @@ function vectorize(model::VectorModel, weighting::Type, data)::SparseVector
     SparseVector(b)
 end
 
-function weighted_bow(model::VectorModel, weighting::Type, data; norm=true)::Dict{Symbol, Float64}
+"""
+    weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::Dict{Symbol, Float64}
+
+Computes `data`'s weighted bag of words using the given model and weighting scheme.
+It takes a function `modify_bow!` (that defaults to `identity`) to modify the bag
+before applying the weighting scheme.
+"""
+function weighted_bow(model::VectorModel, weighting::Type, data, modify_bow!::Function=identity)::Dict{Symbol, Float64}
     W = Dict{Symbol, Float64}()
     bag, maxfreq = compute_bow(model.config, data)
-    s = 0.0
+    bag = modify_bow!(bag)
     for (token, freq) in bag
         global_tokendata = get(model.vocab, token, UNKNOWN_TOKEN)
         if global_tokendata.freq == 0
@@ -162,20 +153,16 @@ function weighted_bow(model::VectorModel, weighting::Type, data; norm=true)::Dic
 
         w = _weight(weighting, freq, maxfreq, model.n, global_tokendata.freq)
         W[token] = w
-        s += w * w
     end
-    
-    if norm
-        s = 1.0 / sqrt(s)
-        for (k, v) in W
-            W[k] = v * s
-        end
-        W
-    else
-        W
-    end
+  
+    W
 end
 
+"""
+    _weight(::Type{T}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
+
+Computes a weight for the given stats using scheme T
+"""
 function _weight(::Type{TfidfModel}, freq::Integer, maxfreq::Integer, n::Integer, global_freq::Integer)::Float64
     (freq / maxfreq) * log(2, 1 + n / global_freq)
 end
